@@ -1,0 +1,1 @@
+Alex's AMATH 582 homework for winter 2021. Computational Methods for Data Analysis.
