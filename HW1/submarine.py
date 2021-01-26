@@ -2,16 +2,16 @@
 # coding: utf-8
 
 import numpy as np
-from numpy.fft import fftn, ifftn, fftshift, ifftshift
+from numpy.fft import fftn, ifftn, ifftshift
 import matplotlib.pyplot as plt
 
 subdata = np.load("subdata.npy", allow_pickle=True)
 
 num_snapshots = subdata.shape[1]  # 49
-L = 10  # length of space interval [-L/2, L/2]  what is our spatial domain?? 20??
+L = 10  # length of space interval [-L, L]
 n = int(subdata.shape[0]**(1/3) + 0.5)  # 64
 s = np.linspace(-L, L, n, endpoint=False)
-k_axes = 2 * np.pi / (2 * L) * s  # rescale wavenumbers bc fft assumes 2pi period
+k_axes = ifftshift(2 * np.pi / (2 * L) * np.arange(-n // 2, n // 2))  # rescale wavenumbers bc fft assumes 2pi period
 
 # ALGORITHM 1
 # #--Averaging in frequency domain to reduce noise--#
@@ -25,10 +25,9 @@ for i in range(num_snapshots):
 xt_avg = sum(Xt) / num_snapshots
 
 
-k_amax = np.unravel_index(np.argmax(xt_avg), xt_avg.shape)  # indices of the maximum 3D frequencies
+k_amax = np.unravel_index(np.argmax(abs(xt_avg)), xt_avg.shape)  # indices of the maximum 3D frequencies
 k_max = tuple(k_axes[i] for i in k_amax)  # frequencies with max value
-k_max
-
+print("k_max:", k_max)
 
 # ALGORITHM 2
 # #--Gaussian Filter--#
@@ -40,7 +39,7 @@ coords = np.zeros((num_snapshots, 3))  # array of 49 3D coordinates of the subma
 for i in range(num_snapshots):
     denoised_xt = Xt[i] * kernel
     denoised_x = ifftn(denoised_xt)
-    idxs = np.unravel_index(np.argmax(denoised_x), denoised_x.shape)
+    idxs = np.unravel_index(np.argmax(abs(denoised_x)), denoised_x.shape)
     coords[i, :] = s[idxs[0]], s[idxs[1]], s[idxs[2]]
 
 # 3D trajectory
@@ -76,3 +75,14 @@ ax.set_xticks(np.linspace(-10, 10, 5, endpoint=True))
 ax.set_yticks(np.linspace(-10, 10, 5, endpoint=True))
 plt.legend()
 plt.show()
+
+# for table. use https://www.tablesgenerator.com/#
+for j in range(3):
+    for i in range(0, 49, 4):
+        print(round(coords[i, j], 1), end=" ")
+    print()
+
+for i in range(0, 25, 2):
+    print(f"{i}:00", end="\t")
+
+print("\nfinal coords:", coords[-1, 0], coords[-1, 1], coords[-1, 2])
