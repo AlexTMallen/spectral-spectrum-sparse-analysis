@@ -537,3 +537,141 @@ plt.xlabel("number of classes")
 plt.title("natural image response mutual info.")
 plt.semilogx(base=2)
 plt.show()
+
+
+# # Analysis of redundancy
+# pca on the overall average response to natural movies
+
+stim_epochs = session.get_stimulus_epochs()
+stim_epochs = stim_epochs[stim_epochs.stimulus_name=="natural_movie_three"]
+stim = session.get_stimulus_table(['natural_movie_three'])
+stim_pres_ids = stim.index
+
+# In[224]:
+times = session.presentationwise_spike_times(stimulus_presentation_ids=stim_pres_ids, # is this right? todo
+                                             unit_ids=unit_ids)
+# In[239]:
+num_bins = 3000
+# stim_length = 30  # seconds for natural movie one
+stim_length = 120  # seconds for natural movie three
+stim_range = np.array([0, stim_length])
+
+trials = np.zeros((20, num_bins, len(unit_ids)))  # stimulus was presented 20 times
+bin_edges = np.linspace(0, stim_length, num_bins + 1)
+bin_centers = (bin_edges[1:] + bin_edges[:-1]) / 2
+bin_width = bin_edges[1] - bin_edges[0]
+
+for j, unit_id in enumerate(unit_ids):
+    # 1st block where nat 1 is shown, it is shown 10 times in each block
+    presentations1 = stim_epochs.iloc[0].start_time + np.linspace(0, stim_epochs.iloc[0].duration, 10)
+    # 2nd block
+    presentations2 = stim_epochs.iloc[1].start_time + np.linspace(0, stim_epochs.iloc[1].duration, 10)
+    presentations = np.concatenate([presentations1, presentations2])
+    for i, start in enumerate(presentations):
+        times_ij = times[(times.unit_id==unit_id) & (start < times.index) & (times.index < (start + stim_length))].index
+        unit_counts, _ = np.histogram(times_ij, num_bins, range=start + stim_range)
+        trials[i, :, j] = unit_counts
+
+# In[240]:
+avg_resp = trials.mean(axis=0)
+avg_resp_c = avg_resp - avg_resp.mean(axis=0, keepdims=True)
+# In[241]:
+U, S, Vh = np.linalg.svd(avg_resp_c, full_matrices=False)
+# In[252]:
+cov = avg_resp_c.T @ avg_resp_c / (avg_resp_c.shape[1] - 1)
+plt.imshow(cov)
+plt.title("covariance: 120 sec movie")
+plt.ylabel("unit")
+plt.xlabel("unit")
+plt.xticks(range(0, 60 ,10))
+plt.show()
+# In[244]:
+plt.plot(avg_resp[:, [27, 52]] * num_bins / stim_length)
+ticks = np.linspace(0, num_bins, 5).astype(int)
+plt.xticks(ticks)
+ax = plt.gca()
+ax.set_xticklabels(np.round(bin_edges[ticks], 3))
+plt.ylabel("firing rate (Hz)")
+plt.xlabel("time from start of video (s)")
+plt.title("correlated responses")
+plt.legend(title="cell", labels=[52, 27], loc="upper right")
+plt.ylim([5, 85])
+# In[245]:
+variances = S**2 / (avg_resp_c.shape[1] - 1)
+cumul_var = sum(variances)
+cumul_vars = [0]
+rank_hat = None
+for i, var in enumerate(variances):
+    cumul_vars.append(var + cumul_vars[-1])
+    if rank_hat is None and cumul_vars[-1] / cumul_var > 0.9:
+        rank_hat = i
+# In[246]:
+plt.plot(cumul_vars / cumul_vars[-1], ".")
+plt.xlabel("rank (number of PCA units)")
+plt.hlines(0.9, 0, rank_hat, linestyle=":", color="k")
+plt.vlines(rank_hat, 0, 0.9, linestyle="--", color="k")
+plt.ylabel("$\sigma^2$")
+plt.title("explained variance")
+plt.show()
+# In[248]:
+avg_resp[:, 27].mean()
+# ## robustness of PCA ran
+# In[236]:
+nums_bins = np.array([50, 100, 200, 350, 500, 750, 1000, 1500, 2000, 5000, 10000, 20000, 50000])
+rank_hats = []
+# In[237]:
+for num_bins in nums_bins:
+    print("NUM BINS", num_bins)
+    stim_length = 30  # seconds for natural movie one
+    stim_range = np.array([0, stim_length])
+
+    trials = np.zeros((20, num_bins, len(unit_ids)))  # stimulus was presented 20 times
+    bin_edges = np.linspace(0, stim_length, num_bins + 1)
+    bin_centers = (bin_edges[1:] + bin_edges[:-1]) / 2
+    bin_width = bin_edges[1] - bin_edges[0]
+
+    for j, unit_id in enumerate(unit_ids):
+        # 1st block where nat 1 is shown, it is shown 10 times in each block
+        presentations1 = stim_epochs.iloc[0].start_time + np.linspace(0, stim_epochs.iloc[0].duration, 10)
+        # 2nd block
+        presentations2 = stim_epochs.iloc[1].start_time + np.linspace(0, stim_epochs.iloc[1].duration, 10)
+        presentations = np.concatenate([presentations1, presentations2])
+        for i, start in enumerate(presentations):
+            times_ij = times[(times.unit_id==unit_id) & (start < times.index) & (times.index < (start + stim_length))].index
+            unit_counts, _ = np.histogram(times_ij, num_bins, range=start + stim_range)
+            trials[i, :, j] = unit_counts
+
+    avg_resp = trials.mean(axis=0)
+    avg_resp_c = avg_resp - avg_resp.mean(axis=0, keepdims=True)
+
+    U, S, Vh = np.linalg.svd(avg_resp_c, full_matrices=False)
+
+    variances = S**2 / (avg_resp_c.shape[1] - 1)
+    cumul_var = sum(variances)
+    cumul_vars = [0]
+    rank_hat = None
+    for i, var in enumerate(variances):
+        cumul_vars.append(var + cumul_vars[-1])
+        if rank_hat is None and cumul_vars[-1] / cumul_var > 0.9:
+            rank_hat = i
+    rank_hats.append(rank_hat)
+# In[250]:
+plt.plot(1000 * 30 / nums_bins, rank_hats)
+plt.xlabel("length of time bins (ms)")
+plt.title("rank robustness: 120 sec movie")
+plt.semilogx()
+plt.ylabel("PCA-estimated rank")
+
+# the correlated units are located far apart
+# In[188]:
+unit52 = units[units.index == unit_ids[52]]
+# In[193]:
+unit27 = units[units.index == unit_ids[27]]
+# In[194]:
+print(unit27['anterior_posterior_ccf_coordinate'])
+print(unit27['dorsal_ventral_ccf_coordinate'])
+unit27['left_right_ccf_coordinate']
+# In[189]:
+print(unit52['anterior_posterior_ccf_coordinate'])
+print(unit52['dorsal_ventral_ccf_coordinate'])
+unit52['left_right_ccf_coordinate']
